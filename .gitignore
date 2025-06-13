@@ -1,0 +1,11 @@
+# Ignore all .pem files
+*.pem
+*/*.pem
+
+# Ignore output directory
+/output
+/output/*
+
+.venv/
+.env/
+*__pycache__/
