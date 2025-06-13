@@ -9,7 +9,7 @@ from utils.secrets_utils import get_secret_value, create_secret_backup
 from datetime import datetime
 
 REGION = "us-east-1"
-ACCOUNT_NAME = "Sandbox"  # opcional
+ACCOUNT_NAME = "Sandbox"  # opcional para arquivo
 SECRETS_REUTILIZADAS = {}  # hash do conteúdo -> nome da secret
 
 ec2 = boto3.client("ec2", region_name=REGION)
