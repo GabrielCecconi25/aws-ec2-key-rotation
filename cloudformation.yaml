@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Rotação de chaves SSH para EC2 com Lambda + EventBridge + S3 + Secrets Manager
+
+Parameters:
+  ScheduleExpression:
+    Type: String
+    Default: rate(1 day)
+    Description: Expressão para agendamento no EventBridge
+
+  NotificationEmail:
+    Type: String
+    Description: Email para receber notificações de rotação de chaves SSH
+
+  BucketName:
+    Type: String
+    Default: ec2-ssh-backups
+    Description: Nome do bucket S3 para armazenar backups de chaves SSH
+    
+
+Resources:
+  S3BackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${BucketName}-${AWS::AccountId}-${AWS::Region}"
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SSHKeyRotationLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ssm:SendCommand
+                  - ssm:GetCommandInvocation
+                  - ssm:DescribeInstanceInformation
+                  - secretsmanager:CreateSecret
+                  - s3:PutObject
+                  - sns:Publish
+                Resource: ["*"]
+
+  KeyRotationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: KeyRotationLambda
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Environment:
+        Variables:
+          BACKUP_BUCKET_NAME: !Ref S3BackupBucket
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+      Code:
+        S3Bucket: my-deployment-artifacts  # Atualize com bucket real
+        S3Key: lambda/key_rotation.zip    # Atualize com nome real
+
+  KeyRotationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt KeyRotationLambda.Arn
+          Id: KeyRotationLambdaTarget
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref KeyRotationLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt KeyRotationEventRule.Arn
+  
+    NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: SSHKeyRotationReportTopic
+
+  NotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+      TopicArn: !Ref NotificationTopic
+
+Outputs:
+  FinalBucketName:
+    Description: Nome final do bucket criado
+    Value: !Sub "${BucketName}-${AWS::AccountId}-${AWS::Region}"
+  
+  LambdaName:
+    Description: Nome da função Lambda criada
+    Value: !Ref RotateSSHKeyFunction
